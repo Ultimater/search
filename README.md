@@ -2,7 +2,7 @@
 
 **Instructions:**  
 1. Upload the PHP files to your local development server (never upload these to production)  
-   - OR -  
+   <span>- OR -</span>  
    Use the [search.php](https://github.com/Ultimater/search/blob/one-file/search.php) file from the `one-file` branch instead.
 2. Run the `search.php` file in your browser  
 3. Type in what to search for, then click **Search**.  
