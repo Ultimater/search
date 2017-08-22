@@ -6,7 +6,63 @@ session_write_close();
 error_reporting(E_ALL);
 ini_set('display_errors',1);
 
-require 'search.functions.php';
+// search.functions.php
+function handlePostRedirectGet()
+{
+    if( !empty($_POST) )
+    {
+        session_start();
+        $_SESSION['prg_post']=$_POST;
+        session_write_close();
+        header("HTTP/1.1 303 See Other");
+        header("Location: {$_SERVER['REQUEST_URI']}");
+        exit;
+    }
+    if(isset($_SESSION['prg_post']))
+    {
+        session_start();
+        $_POST = $_SESSION['prg_post'];
+        unset($_SESSION['prg_post']);
+        session_write_close();
+    }
+}
+
+function getPOST($paramName, $defaultValue = null)
+{
+    return isset($_POST[$paramName]) ? $_POST[$paramName] : $defaultValue;
+}
+
+function print_r_html($obj)
+{
+    echo '<pre>'.htmlentities(print_r($obj,true)).'</pre>';
+}
+
+function glob_recursive($pattern, $flags = 0)
+{
+    $files = glob($pattern, $flags);
+    foreach (glob(dirname($pattern).'/*', GLOB_ONLYDIR|GLOB_NOSORT) as $dir)
+    {
+        $files = array_merge($files, glob_recursive($dir.'/'.basename($pattern), $flags));
+    }
+    return $files;
+}
+
+function selectOptions($selectElement,$selectArray=array())
+{
+    $selectArray=(array)$selectArray;
+    $dom = new DOMDocument();
+    $dom->loadHTML('<!doctype html><html><head></head><body>'.$selectElement.'</body></html>');
+    $body=$dom->getElementsByTagName("body")->item(0);
+    $select=$body->getElementsByTagName("select")->item(0);
+    $options=$select->getElementsByTagName("option");
+    foreach($options as $option)
+    {
+        if(in_array($option->getAttribute('value'),$selectArray))$option->setAttribute('selected','selected');
+    }
+    return $dom->saveXML($select);
+}
+// search.functions.php
+
 handlePostRedirectGet();
 
 
@@ -101,7 +157,87 @@ if( $p !== NULL )
         'terms'=>$terms
     );
 
-    require 'search.glob-searcher.class.php';
+    //search.glob-searcher.class.php
+class GlobalSearcher
+{
+
+    public static function searchFiles($args)
+    {
+
+        list($dir,$subdirs,$terms) = array($args['dir'],$args['subdirs'],$args['terms']);
+        $fileArray=array();
+        if($subdirs)
+        {
+            foreach(glob_recursive($dir . "*.php") as $filename)
+            {
+                $fileArray[] = $filename;
+            }
+        }else{
+            foreach (glob($dir . "*.php") as $filename)
+            {
+                $fileArray[] = $filename;
+            }
+        }
+        $fileNameHas=array();
+        $fileNameLacks=array();
+        $contentHas=array();
+        $contentLacks=array();
+        $fileOrContentHas=array();
+        $fileOrContentLacks=array();
+        foreach($terms as $term)
+        {
+            if($term['where']=='filename')
+            {
+                if($term['invert']){$fileNameLacks[]=$term['search'];}else{$fileNameHas[]=$term['search'];}
+            }
+            if($term['where']=='contents')
+            {
+                if($term['invert']){$contentLacks[]=$term['search'];}else{$contentHas[]=$term['search'];}
+            }
+            if($term['where']=='both')
+            {
+                if($term['invert']){$fileOrContentLacks[]=$term['search'];}else{$fileOrContentHas[]=$term['search'];}
+            }
+        }
+        return self::searchFileArray($fileArray,$fileNameHas,$fileNameLacks,$contentHas,$contentLacks,$fileOrContentHas,$fileOrContentLacks);
+    }
+
+    protected static function hasAll($file,$arr)
+    {
+        foreach($arr as $searchFor)
+        {
+            if($searchFor==='')continue;
+            if(strpos($file, $searchFor) === false)return false;
+        }
+        return true;
+    }
+
+    protected static function lacksAll($file,$arr)
+    {
+        foreach($arr as $searchFor)
+        {
+            if($searchFor==='')continue;
+            if(strpos($file, $searchFor) !== false)return false;
+        }
+        return true;
+    }
+
+    protected static function searchFileArray($fileArray,$fileNameHas,$fileNameLacks,$contentHas,$contentLacks,$fileOrContentHas,$fileOrContentLacks)
+    {
+        $foundArray=array();
+        foreach($fileArray as $file)
+        {
+            if(!self::hasAll($file,$fileNameHas)||!self::lacksAll($file,$fileNameLacks))continue;
+            $content = file_get_contents($file);
+            if(!self::hasAll($content,$contentHas)||!self::lacksAll($content,$contentLacks))continue;
+            if(!(self::hasAll($file,$fileOrContentHas)||self::hasAll($content,$fileOrContentHas)))continue;
+            if(!self::lacksAll($file,$fileOrContentLacks)||!self::lacksAll($content,$fileOrContentLacks))continue;
+            $foundArray[] = $file;
+        }
+       return $foundArray;
+    }
+}
+    //search.glob-searcher.class.php
     $matched_files = GlobalSearcher::searchFiles($searchArguments);
 
     echo sprintf('<hr /><h3>%s %s<br /></h3>',sizeof($matched_files),$matched_files==1?'Match':'Matches');
